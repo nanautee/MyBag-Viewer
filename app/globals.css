@@ -8,8 +8,8 @@
   --orange:#ff8c00;--gray:#30363d;--text:#c9d1d9;
   --dim:#484f58;--glow:0 0 20px rgba(0,255,156,0.15);
 }
-html,body{height:100%;font-family:'JetBrains Mono',monospace;background:var(--bg);color:var(--text)}
-#__next{height:100%;display:flex;flex-direction:column;overflow:hidden}
+html{height:100%}
+body{height:100%;font-family:'JetBrains Mono',monospace;background:var(--bg);color:var(--text);display:flex;flex-direction:column;overflow:hidden}
 
 .scanline{
   position:fixed;top:0;left:0;width:100%;height:100%;
