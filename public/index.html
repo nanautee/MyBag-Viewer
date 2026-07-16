@@ -34,6 +34,19 @@ header{
 .title{color:var(--green);font-weight:700;font-size:14px;letter-spacing:2px}
 .title span{color:var(--dim);font-weight:300}
 
+.header-spacer{flex:1}
+
+.btn-copy-header{
+  background:transparent;color:var(--cyan);border:1px solid var(--cyan);
+  padding:6px 16px;font-family:inherit;font-size:11px;font-weight:700;
+  cursor:pointer;border-radius:4px;letter-spacing:1px;transition:all .2s;
+  display:flex;align-items:center;gap:8px;white-space:nowrap;
+}
+.btn-copy-header:hover{background:var(--cyan);color:var(--bg);box-shadow:0 0 12px rgba(0,212,255,0.3)}
+.btn-copy-header.copied{background:var(--green3);border-color:var(--green);color:var(--green)}
+.btn-copy-header .label{color:var(--dim);font-weight:300;font-size:10px;letter-spacing:1px}
+.btn-copy-header .ca-val{color:var(--cyan);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+
 .container{flex:1;display:flex;overflow:hidden}
 
 .sidebar{
@@ -76,6 +89,7 @@ header{
   padding:16px 24px;border-top:1px solid var(--gray);background:var(--bg2);
   display:flex;gap:12px;align-items:center;
 }
+.input-area.hidden{display:none}
 .prompt{color:var(--green);font-weight:700;font-size:14px;white-space:nowrap}
 input,select{
   flex:1;background:var(--bg);border:1px solid var(--gray);color:var(--text);
@@ -153,6 +167,28 @@ button:active{transform:scale(0.97)}
 }
 .chart-header .ca-display span{color:var(--cyan)}
 
+.ca-showcase{
+  text-align:center;padding:40px 20px;
+}
+.ca-showcase .token-name{font-size:28px;font-weight:700;color:var(--green);margin-bottom:8px;letter-spacing:3px}
+.ca-showcase .token-symbol{font-size:16px;color:var(--cyan);margin-bottom:24px;letter-spacing:2px}
+.ca-showcase .ca-address{
+  display:inline-flex;align-items:center;gap:12px;
+  background:var(--bg3);border:1px solid var(--gray);border-radius:6px;
+  padding:12px 20px;margin:16px 0;
+}
+.ca-showcase .ca-text{font-size:12px;color:var(--dim);word-break:break-all;max-width:500px}
+.ca-showcase .divider{
+  width:200px;height:1px;background:var(--gray);margin:24px auto;
+}
+.ca-showcase .links{display:flex;justify-content:center;gap:16px;margin-top:16px;flex-wrap:wrap}
+.ca-showcase .link-btn{
+  background:var(--bg3);color:var(--text);border:1px solid var(--gray);
+  padding:8px 16px;border-radius:4px;font-size:11px;letter-spacing:1px;
+  text-decoration:none;transition:all .2s;cursor:pointer;font-family:inherit;
+}
+.ca-showcase .link-btn:hover{border-color:var(--green);color:var(--green)}
+
 .spinner{
   display:inline-block;width:14px;height:14px;border:2px solid var(--green3);
   border-top-color:var(--green);border-radius:50%;animation:spin .6s linear infinite;
@@ -176,6 +212,11 @@ button:active{transform:scale(0.97)}
 <header>
   <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
   <div class="title">MYBAG<span>_VIEWER</span> <span>v2.1</span></div>
+  <div class="header-spacer"></div>
+  <button class="btn-copy-header" id="header-ca-btn" onclick="copyCA(TOKEN_CA)">
+    <span class="label">COPY CA</span>
+    <span class="ca-val" id="header-ca-val"></span>
+  </button>
 </header>
 
 <div class="container">
@@ -184,8 +225,8 @@ button:active{transform:scale(0.97)}
     <div class="sidebar-item active" data-view="analyzer">
       <span class="icon">&gt;_</span> Wallet Analyzer
     </div>
-    <div class="sidebar-item" data-view="dex">
-      <span class="icon">~</span> DEX Chart
+    <div class="sidebar-item" data-view="ca">
+      <span class="icon">$</span> CA
     </div>
     <div class="sidebar-item" data-view="help">
       <span class="icon">?</span> Help
@@ -199,7 +240,7 @@ button:active{transform:scale(0.97)}
   <div class="main">
     <div class="tabs">
       <div class="tab active" data-view="analyzer">ANALYZER</div>
-      <div class="tab" data-view="dex">DEX CHART</div>
+      <div class="tab" data-view="ca">CA</div>
       <div class="tab" data-view="help">MANUAL</div>
     </div>
 
@@ -225,6 +266,11 @@ button:active{transform:scale(0.97)}
 </div>
 
 <script>
+const TOKEN_CA = 'PASTE_YOUR_CA_HERE';
+const TOKEN_NAME = 'MyToken';
+const TOKEN_SYMBOL = 'MTK';
+const TOKEN_CHAIN = 'solana';
+
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 const output = $('#output');
@@ -233,6 +279,8 @@ const chainSelect = $('#chain-select');
 const btn = $('#analyze-btn');
 
 let currentView = 'analyzer';
+
+document.getElementById('header-ca-val').textContent = TOKEN_CA.slice(0,6) + '...' + TOKEN_CA.slice(-4);
 
 function ts() {
   return new Date().toISOString().replace('T',' ').slice(0,19);
@@ -254,10 +302,18 @@ function addSeparator() {
 }
 
 function copyCA(addr) {
-  navigator.clipboard.writeText(addr).then(() => {
-    const btns = document.querySelectorAll('.btn-copy');
-    btns.forEach(b => {
-      if (b.dataset.addr === addr) {
+  const text = addr || TOKEN_CA;
+  navigator.clipboard.writeText(text).then(() => {
+    const headerBtn = document.getElementById('header-ca-btn');
+    headerBtn.classList.add('copied');
+    headerBtn.querySelector('.label').textContent = '✓ COPIED';
+    setTimeout(() => {
+      headerBtn.classList.remove('copied');
+      headerBtn.querySelector('.label').textContent = 'COPY CA';
+    }, 2000);
+
+    document.querySelectorAll('.btn-copy').forEach(b => {
+      if (b.dataset.addr === text) {
         b.textContent = '✓ COPIED';
         b.classList.add('copied');
         setTimeout(() => { b.textContent = 'COPY CA'; b.classList.remove('copied'); }, 2000);
@@ -347,33 +403,40 @@ function addResult(data) {
   box.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
-function addDexChart(ca, chain) {
+function showCAShowcase() {
+  output.innerHTML = '';
+
+  const chainSlug = { solana: 'solana', ethereum: 'ethereum', bsc: 'bsc', polygon: 'polygon' };
+  const dexUrl = `https://dexscreener.com/${chainSlug[TOKEN_CHAIN] || 'solana'}/${TOKEN_CA}`;
+  const explorerUrls = {
+    solana: `https://solscan.io/token/${TOKEN_CA}`,
+    ethereum: `https://etherscan.io/token/${TOKEN_CA}`,
+    bsc: `https://bscscan.com/token/${TOKEN_CA}`,
+    polygon: `https://polygonscan.com/token/${TOKEN_CA}`,
+  };
+  const birdeyeUrl = `https://birdeye.so/token/${TOKEN_CA}?chain=${TOKEN_CHAIN}`;
+
   const box = document.createElement('div');
-  box.className = 'chart-container';
-
-  let embedUrl = '';
-  if (chain === 'solana') {
-    embedUrl = `https://dexscreener.com/solana/${ca}?embed=1&theme=dark&info=0`;
-  } else if (chain === 'ethereum') {
-    embedUrl = `https://dexscreener.com/ethereum/${ca}?embed=1&theme=dark&info=0`;
-  } else if (chain === 'bsc') {
-    embedUrl = `https://dexscreener.com/bsc/${ca}?embed=1&theme=dark&info=0`;
-  } else if (chain === 'polygon') {
-    embedUrl = `https://dexscreener.com/polygon/${ca}?embed=1&theme=dark&info=0`;
-  }
-
+  box.className = 'result-box';
   box.innerHTML = `
-    <div class="chart-header">
-      <div class="ca-display">
-        <span>DEX SCREENER</span> — ${ca}
+    <div class="ca-showcase">
+      <div class="token-name">${TOKEN_NAME}</div>
+      <div class="token-symbol">${TOKEN_SYMBOL}</div>
+      <div class="divider"></div>
+      <div class="ca-address">
+        <span class="ca-text">${TOKEN_CA}</span>
+        <button class="btn-copy" data-addr="${TOKEN_CA}" onclick="copyCA('${TOKEN_CA}')">COPY CA</button>
       </div>
-      <button class="btn-copy" data-addr="${ca}" onclick="copyCA('${ca}')">COPY CA</button>
+      <div class="divider"></div>
+      <div style="color:var(--dim);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Links</div>
+      <div class="links">
+        <a class="link-btn" href="${dexUrl}" target="_blank" rel="noopener">DEX Screener</a>
+        <a class="link-btn" href="${birdeyeUrl}" target="_blank" rel="noopener">Birdeye</a>
+        <a class="link-btn" href="${explorerUrls[TOKEN_CHAIN]}" target="_blank" rel="noopener">Explorer</a>
+      </div>
     </div>
-    <iframe src="${embedUrl}" loading="lazy" allow="fullscreen"></iframe>
   `;
-
   output.appendChild(box);
-  box.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
 function showError(msg) {
@@ -391,11 +454,6 @@ async function analyze() {
 
   if (!address) {
     showError('address is required');
-    return;
-  }
-
-  if (currentView === 'dex') {
-    await openDexChart(address, chain);
     return;
   }
 
@@ -429,24 +487,6 @@ async function analyze() {
   input.value = '';
 }
 
-async function openDexChart(ca, chain) {
-  setLoading(true);
-  addSeparator();
-  addLog(`loading DEX chart for <span style="color:var(--cyan)">${ca.slice(0,8)}...${ca.slice(-6)}</span> on ${chain}...`);
-  addLog('loading chart... <span class="spinner"></span>');
-
-  try {
-    output.lastElementChild?.remove();
-    addLog('chart loaded <span class="ok">[OK]</span>');
-    addDexChart(ca, chain);
-  } catch (err) {
-    showError(err.message);
-  }
-
-  setLoading(false);
-  input.value = '';
-}
-
 input.addEventListener('keydown', e => { if (e.key === 'Enter') analyze(); });
 
 $$('.sidebar-item, .tab').forEach(el => {
@@ -461,6 +501,7 @@ $$('.sidebar-item, .tab').forEach(el => {
     const inputArea = $('#input-area');
 
     if (view === 'help') {
+      inputArea.classList.add('hidden');
       output.innerHTML = `
         <div class="result-box">
           <div class="header"><span>MANUAL</span></div>
@@ -474,25 +515,19 @@ $$('.sidebar-item, .tab').forEach(el => {
             <div><span class="warn">Supported chains:</span></div>
             <div>  ◎ Solana &nbsp; ◆ Ethereum &nbsp; ⬡ BSC &nbsp; ⬟ Polygon</div>
             <div style="color:var(--dim)">──────────────────────────────────</div>
-            <div><span class="warn">DEX Chart (DEX CHART tab):</span></div>
-            <div>  Paste a token CA to view the DEXScreener chart</div>
-            <div>  Use <span class="ok">COPY CA</span> button to save address</div>
+            <div><span class="warn">CA tab:</span></div>
+            <div>  View token info and quick links</div>
+            <div>  Use <span class="ok">COPY CA</span> button in header to copy address</div>
             <div style="color:var(--dim)">──────────────────────────────────</div>
             <div style="color:var(--dim)">API: POST /api/wallet &nbsp; | &nbsp; GET /api/token/:chain/:ca</div>
           </div>
         </div>
       `;
-      inputArea.querySelector('.prompt').textContent = 'help@manual ~>';
-      input.placeholder = 'type a command...';
-    } else if (view === 'dex') {
-      output.innerHTML = `
-        <div class="fancy-line">──────────────────────────────────────────────</div>
-        <div class="log-entry"><span class="ts">[sys]</span> <span class="ok">DEX chart module ready</span> — paste token CA to view chart</div>
-        <div class="fancy-line">──────────────────────────────────────────────</div>
-      `;
-      inputArea.querySelector('.prompt').textContent = 'dex@chart ~>';
-      input.placeholder = 'paste token CA (contract address)...';
+    } else if (view === 'ca') {
+      inputArea.classList.add('hidden');
+      showCAShowcase();
     } else {
+      inputArea.classList.remove('hidden');
       output.innerHTML = `
         <div class="fancy-line">──────────────────────────────────────────────</div>
         <div class="log-entry"><span class="ts">[sys]</span> <span class="ok">system ready</span> — enter wallet address to analyze</div>

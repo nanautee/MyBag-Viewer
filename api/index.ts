@@ -1,0 +1,9 @@
+import app from "../src/app";
+
+export default app;
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
