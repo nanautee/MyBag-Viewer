@@ -3,8 +3,9 @@ import { Analytics } from "@vercel/analytics/react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MyBag Viewer",
+  title: "MBV",
   description: "Wallet gross turnover analyzer — Solana, Ethereum, BSC, Polygon",
+  icons: { icon: "/logo.ico" },
 };
 
 export default function RootLayout({
