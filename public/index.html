@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>wallet-analyzer</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap');
+
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0e14;--bg2:#0d1117;--bg3:#161b22;
+  --green:#00ff9c;--green2:#00cc7a;--green3:#003d23;
+  --cyan:#00d4ff;--red:#ff3b3b;--yellow:#ffd700;
+  --orange:#ff8c00;--gray:#30363d;--text:#c9d1d9;
+  --dim:#484f58;--glow:0 0 20px rgba(0,255,156,0.15);
+}
+html,body{height:100%;font-family:'JetBrains Mono',monospace;background:var(--bg);color:var(--text)}
+body{display:flex;flex-direction:column;overflow:hidden}
+
+.scanline{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,156,0.015) 2px,rgba(0,255,156,0.015) 4px);
+  pointer-events:none;z-index:999;
+}
+
+header{
+  padding:12px 24px;border-bottom:1px solid var(--gray);
+  display:flex;align-items:center;gap:16px;background:var(--bg2);
+}
+.dots{display:flex;gap:6px}
+.dot{width:12px;height:12px;border-radius:50%;border:1px solid rgba(255,255,255,0.1)}
+.dot.r{background:#ff5f56}.dot.y{background:#ffbd2e}.dot.g{background:#27c93f}
+.title{color:var(--green);font-weight:700;font-size:14px;letter-spacing:2px}
+.title span{color:var(--dim);font-weight:300}
+
+.container{flex:1;display:flex;overflow:hidden}
+
+.sidebar{
+  width:260px;border-right:1px solid var(--gray);background:var(--bg2);
+  display:flex;flex-direction:column;padding:0;
+}
+.sidebar-header{padding:16px;border-bottom:1px solid var(--gray);color:var(--green);font-size:11px;letter-spacing:3px;text-transform:uppercase}
+.sidebar-item{
+  padding:12px 16px;cursor:pointer;font-size:13px;
+  border-bottom:1px solid rgba(48,54,61,0.5);transition:all .15s;
+  display:flex;align-items:center;gap:10px;
+}
+.sidebar-item:hover{background:var(--bg3)}
+.sidebar-item.active{background:var(--green3);color:var(--green);border-left:2px solid var(--green)}
+.sidebar-item .icon{font-size:14px;width:20px;text-align:center}
+
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+.tabs{
+  display:flex;border-bottom:1px solid var(--gray);background:var(--bg2);padding:0 8px;
+}
+.tab{
+  padding:10px 20px;font-size:12px;color:var(--dim);cursor:pointer;
+  border-bottom:2px solid transparent;transition:all .15s;letter-spacing:1px;
+}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--green);border-bottom-color:var(--green)}
+
+.content{flex:1;overflow-y:auto;padding:24px;scroll-behavior:smooth}
+.content::-webkit-scrollbar{width:6px}
+.content::-webkit-scrollbar-track{background:var(--bg)}
+.content::-webkit-scrollbar-thumb{background:var(--gray);border-radius:3px}
+
+.input-area{
+  padding:16px 24px;border-top:1px solid var(--gray);background:var(--bg2);
+  display:flex;gap:12px;align-items:center;
+}
+.prompt{color:var(--green);font-weight:700;font-size:14px;white-space:nowrap}
+input,select{
+  flex:1;background:var(--bg);border:1px solid var(--gray);color:var(--text);
+  padding:10px 14px;font-family:inherit;font-size:13px;border-radius:4px;outline:none;
+}
+input:focus,select:focus{border-color:var(--green);box-shadow:var(--glow)}
+select{max-width:140px;cursor:pointer}
+select option{background:var(--bg2);color:var(--text)}
+button{
+  background:var(--green3);color:var(--green);border:1px solid var(--green2);
+  padding:10px 24px;font-family:inherit;font-size:12px;font-weight:700;
+  cursor:pointer;border-radius:4px;letter-spacing:2px;text-transform:uppercase;
+  transition:all .2s;
+}
+button:hover{background:var(--green2);color:var(--bg);box-shadow:var(--glow)}
+button:disabled{opacity:0.4;cursor:not-allowed}
+button:active{transform:scale(0.97)}
+
+.log-entry{margin-bottom:8px;line-height:1.7;font-size:13px}
+.log-entry .ts{color:var(--dim);font-size:11px}
+.log-entry .ok{color:var(--green)}
+.log-entry .err{color:var(--red)}
+.log-entry .info{color:var(--cyan)}
+.log-entry .warn{color:var(--yellow)}
+
+.result-box{
+  background:var(--bg2);border:1px solid var(--gray);border-radius:6px;
+  padding:20px;margin:12px 0;overflow-x:auto;
+}
+.result-box .header{
+  color:var(--green);font-size:11px;letter-spacing:3px;text-transform:uppercase;
+  margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--gray);
+}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.stat-item{display:flex;flex-direction:column;gap:4px}
+.stat-label{color:var(--dim);font-size:10px;letter-spacing:2px;text-transform:uppercase}
+.stat-value{color:var(--green);font-size:16px;font-weight:700}
+.stat-value.big{font-size:24px}
+.stat-value.cyan{color:var(--cyan)}
+.stat-value.yellow{color:var(--yellow)}
+.stat-value.red{color:var(--red)}
+
+.token-box{
+  margin-top:16px;padding:16px;background:var(--bg3);border:1px solid var(--green3);
+  border-radius:4px;
+}
+.token-box .tag{
+  display:inline-block;background:var(--green3);color:var(--green);
+  padding:2px 8px;border-radius:3px;font-size:10px;letter-spacing:1px;margin-bottom:8px;
+}
+
+.spinner{
+  display:inline-block;width:14px;height:14px;border:2px solid var(--green3);
+  border-top-color:var(--green);border-radius:50%;animation:spin .6s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.blink{animation:blink 1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+
+.typewriter{overflow:hidden;white-space:nowrap;border-right:2px solid var(--green);animation:typing 1s steps(20) forwards, blink .8s step-end infinite}
+@keyframes typing{from{width:0}to{width:100%}}
+
+.fancy-line{
+  padding:4px 0;color:var(--green);font-size:11px;letter-spacing:1px;opacity:0.5;
+}
+
+.hidden{display:none}
+</style>
+</head>
+<body>
+
+<div class="scanline"></div>
+
+<header>
+  <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+  <div class="title">WALLET<span>_ANALYZER</span> <span>v2.0</span></div>
+</header>
+
+<div class="container">
+  <div class="sidebar">
+    <div class="sidebar-header">// Modules</div>
+    <div class="sidebar-item active" data-view="analyzer">
+      <span class="icon">&gt;_</span> Wallet Analyzer
+    </div>
+    <div class="sidebar-item" data-view="token">
+      <span class="icon">*$</span> Token Lookup
+    </div>
+    <div class="sidebar-item" data-view="help">
+      <span class="icon">?</span> Help
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="tabs">
+      <div class="tab active" data-view="analyzer">ANALYZER</div>
+      <div class="tab" data-view="token">TOKEN</div>
+      <div class="tab" data-view="help">MANUAL</div>
+    </div>
+
+    <div class="content" id="content">
+      <div class="fancy-line">──────────────────────────────────────────────</div>
+      <div class="log-entry"><span class="ts">[sys]</span> <span class="ok">system ready</span> — enter wallet address to analyze</div>
+      <div class="fancy-line">──────────────────────────────────────────────</div>
+      <div id="output"></div>
+    </div>
+
+    <div class="input-area" id="input-area">
+      <span class="prompt">wallet@analyzer ~&gt;</span>
+      <select id="chain-select">
+        <option value="solana">Solana</option>
+        <option value="ethereum">Ethereum</option>
+        <option value="bsc">BSC</option>
+        <option value="polygon">Polygon</option>
+      </select>
+      <input type="text" id="address-input" placeholder="enter wallet address..." autocomplete="off" spellcheck="false">
+      <button id="analyze-btn" onclick="analyze()">ANALYZE</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const output = $('#output');
+const input = $('#address-input');
+const chainSelect = $('#chain-select');
+const btn = $('#analyze-btn');
+
+let currentView = 'analyzer';
+
+function ts() {
+  return new Date().toISOString().replace('T',' ').slice(0,19);
+}
+
+function addLog(html, cls = '') {
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = `<span class="ts">[${ts()}]</span> ${cls ? `<span class="${cls}">` : ''}${html}${cls ? '</span>' : ''}`;
+  output.appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function addSeparator() {
+  const div = document.createElement('div');
+  div.className = 'fancy-line';
+  div.textContent = '─'.repeat(44);
+  output.appendChild(div);
+}
+
+function addResult(data) {
+  const box = document.createElement('div');
+  box.className = 'result-box';
+
+  const firstTx = data.first_tx_time ? new Date(data.first_tx_time).toLocaleDateString() : 'N/A';
+  const lastTx = data.last_tx_time ? new Date(data.last_tx_time).toLocaleDateString() : 'N/A';
+
+  const chainEmoji = { solana: '◎', ethereum: '◆', bsc: '⬡', polygon: '⬟' };
+
+  let tokenHTML = '';
+  if (data.token) {
+    tokenHTML = `
+      <div class="token-box">
+        <div class="tag">TOKEN</div>
+        <div class="stat-grid">
+          <div class="stat-item">
+            <div class="stat-label">Symbol</div>
+            <div class="stat-value cyan">${data.token.symbol}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Balance</div>
+            <div class="stat-value">${Number(data.token.balance).toLocaleString(undefined, {maximumFractionDigits:4})}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Contract</div>
+            <div class="stat-value" style="font-size:11px;color:var(--dim);word-break:break-all">${data.token.mint}</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  box.innerHTML = `
+    <div class="header">${chainEmoji[data.chain] || '>'} ${data.chain.toUpperCase()} WALLET REPORT</div>
+    <div style="color:var(--dim);font-size:11px;margin-bottom:16px;word-break:break-all">
+      address: ${data.address}
+    </div>
+    <div class="stat-grid">
+      <div class="stat-item">
+        <div class="stat-label">Balance</div>
+        <div class="stat-value big">${Number(data.balance).toLocaleString(undefined, {maximumFractionDigits:6})} ${data.native_currency}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Gross Turnover</div>
+        <div class="stat-value big yellow">${Number(data.gross_turnover).toLocaleString(undefined, {maximumFractionDigits:6})} ${data.native_currency}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Total Sent</div>
+        <div class="stat-value red">${Number(data.total_sent).toLocaleString(undefined, {maximumFractionDigits:6})} ${data.native_currency}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Total Received</div>
+        <div class="stat-value cyan">${Number(data.total_received).toLocaleString(undefined, {maximumFractionDigits:6})} ${data.native_currency}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Transactions</div>
+        <div class="stat-value">${data.tx_count}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">First Tx</div>
+        <div class="stat-value" style="font-size:13px">${firstTx}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Last Tx</div>
+        <div class="stat-value" style="font-size:13px">${lastTx}</div>
+      </div>
+    </div>
+    ${tokenHTML}
+  `;
+
+  output.appendChild(box);
+  box.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function showError(msg) {
+  addLog(`ERROR: ${msg}`, 'err');
+}
+
+function setLoading(on) {
+  btn.disabled = on;
+  btn.innerHTML = on ? '<span class="spinner"></span>' : 'ANALYZE';
+}
+
+async function analyze() {
+  const address = input.value.trim();
+  const chain = chainSelect.value;
+
+  if (!address) {
+    showError('address is required');
+    return;
+  }
+
+  if (currentView === 'token') {
+    await analyzeToken(address, chain);
+    return;
+  }
+
+  setLoading(true);
+  addSeparator();
+  addLog(`analyzing <span style="color:var(--cyan)">${address.slice(0,12)}...${address.slice(-6)}</span> on ${chain}...`);
+  addLog('fetching data... <span class="spinner"></span>');
+
+  try {
+    const res = await fetch('/api/wallet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address, chain }),
+    });
+
+    const data = await res.json();
+
+    if (data.error) {
+      showError(data.message || data.error);
+    } else {
+      output.lastElementChild?.remove();
+      addLog('analysis complete <span class="ok">[OK]</span>');
+      addResult(data);
+    }
+  } catch (err) {
+    output.lastElementChild?.remove();
+    showError(err.message);
+  }
+
+  setLoading(false);
+  input.value = '';
+}
+
+async function analyzeToken(address, chain) {
+  setLoading(true);
+  addSeparator();
+  addLog(`looking up token CA: <span style="color:var(--cyan)">${address}</span> on ${chain}...`);
+
+  try {
+    const res = await fetch(`/api/token/${chain}/${address}`);
+    const data = await res.json();
+
+    if (data.error) {
+      showError(data.message || data.error);
+    } else {
+      addLog('token found <span class="ok">[OK]</span>');
+      const box = document.createElement('div');
+      box.className = 'result-box';
+      box.innerHTML = `
+        <div class="header">TOKEN: ${data.mint}</div>
+        <div class="stat-grid">
+          <div class="stat-item">
+            <div class="stat-label">Decimals</div>
+            <div class="stat-value">${data.decimals}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Top Holders</div>
+            <div class="stat-value">${data.largest_holders?.length || 0}</div>
+          </div>
+        </div>
+        ${data.largest_holders?.length ? `
+          <div style="margin-top:16px">
+            <div class="stat-label" style="margin-bottom:8px">TOP HOLDERS</div>
+            ${data.largest_holders.map(h => `
+              <div style="font-size:11px;padding:3px 0;color:var(--dim)">
+                <span style="color:var(--text)">${h.address.slice(0,8)}...${h.address.slice(-6)}</span>
+                <span style="color:var(--green);float:right">${Number(h.amount).toLocaleString(undefined, {maximumFractionDigits:2})}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      `;
+      output.appendChild(box);
+    }
+  } catch (err) {
+    showError(err.message);
+  }
+
+  setLoading(false);
+  input.value = '';
+}
+
+input.addEventListener('keydown', e => { if (e.key === 'Enter') analyze(); });
+
+$$('.sidebar-item, .tab').forEach(el => {
+  el.addEventListener('click', () => {
+    const view = el.dataset.view;
+    if (!view) return;
+    currentView = view;
+
+    $$('.sidebar-item').forEach(s => s.classList.toggle('active', s.dataset.view === view));
+    $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
+
+    const inputArea = $('#input-area');
+
+    if (view === 'help') {
+      output.innerHTML = `
+        <div class="result-box">
+          <div class="header">MANUAL</div>
+          <div style="font-size:13px;line-height:2">
+            <div><span class="ok">&gt;_</span> <b>Wallet Analyzer</b> — analyze any wallet's gross turnover</div>
+            <div style="color:var(--dim)">──────────────────────────────────</div>
+            <div><span class="info">1.</span> Select chain from dropdown</div>
+            <div><span class="info">2.</span> Paste wallet address</div>
+            <div><span class="info">3.</span> Click <span class="ok">ANALYZE</span></div>
+            <div style="color:var(--dim)">──────────────────────────────────</div>
+            <div><span class="warn">Supported chains:</span></div>
+            <div>  ◎ Solana &nbsp; ◆ Ethereum &nbsp; ⬡ BSC &nbsp; ⬟ Polygon</div>
+            <div style="color:var(--dim)">──────────────────────────────────</div>
+            <div><span class="warn">Token Lookup (TOKEN tab):</span></div>
+            <div>  Enter a token contract address (CA) to see</div>
+            <div>  supply and top holders on Solana</div>
+            <div style="color:var(--dim)">──────────────────────────────────</div>
+            <div style="color:var(--dim)">API: POST /api/wallet &nbsp; | &nbsp; GET /api/token/:chain/:ca</div>
+          </div>
+        </div>
+      `;
+      inputArea.querySelector('.prompt').textContent = 'help@manual ~>';
+      input.placeholder = 'paste CA for token lookup...';
+    } else if (view === 'token') {
+      output.innerHTML = `
+        <div class="fancy-line">──────────────────────────────────────────────</div>
+        <div class="log-entry"><span class="ts">[sys]</span> <span class="ok">token module ready</span> — enter contract address (CA)</div>
+        <div class="fancy-line">──────────────────────────────────────────────</div>
+      `;
+      inputArea.querySelector('.prompt').textContent = 'token@lookup ~>';
+      input.placeholder = 'paste token contract address (CA)...';
+    } else {
+      output.innerHTML = `
+        <div class="fancy-line">──────────────────────────────────────────────</div>
+        <div class="log-entry"><span class="ts">[sys]</span> <span class="ok">system ready</span> — enter wallet address to analyze</div>
+        <div class="fancy-line">──────────────────────────────────────────────</div>
+      `;
+      inputArea.querySelector('.prompt').textContent = 'wallet@analyzer ~>';
+      input.placeholder = 'enter wallet address...';
+    }
+  });
+});
+
+input.focus();
+</script>
+</body>
+</html>
