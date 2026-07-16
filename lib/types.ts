@@ -18,8 +18,6 @@ export interface TokenInfo {
   balance: string;
   mint: string;
   decimals: number;
-  usd_value?: string | null;
-  price_usd?: string | null;
 }
 
 export interface WalletRequest {

@@ -1,5 +1,5 @@
-import axios, { AxiosInstance } from "axios";
-import { WalletStats, TokenInfo } from "../types";
+import axios from "axios";
+import type { WalletStats, TokenInfo } from "./types";
 
 interface RpcResponse {
   jsonrpc: string;
@@ -19,25 +19,11 @@ interface TxResponse {
   meta: {
     preBalances: number[];
     postBalances: number[];
-    preTokenBalances?: Array<{
-      accountIndex: number;
-      mint: string;
-      owner: string;
-      uiTokenAmount: { amount: string; decimals: number; uiAmount: number; uiAmountString: string };
-    }>;
-    postTokenBalances?: Array<{
-      accountIndex: number;
-      mint: string;
-      owner: string;
-      uiTokenAmount: { amount: string; decimals: number; uiAmount: number; uiAmountString: string };
-    }>;
     fee: number;
     err: any;
   };
   transaction: {
-    message: {
-      accountKeys: string[];
-    };
+    message: { accountKeys: string[] };
   };
   blockTime: number | null;
 }
@@ -47,11 +33,12 @@ const SOL_PER_LAMPORT = 1e9;
 export class SolanaClient {
   private rpcURLs: string[];
   private currentIndex = 0;
-  private http: AxiosInstance;
+  private http = axios.create({ timeout: 30000 });
 
   constructor(rpcURLs: string[]) {
-    this.rpcURLs = rpcURLs.length ? rpcURLs : ["https://api.mainnet-beta.solana.com"];
-    this.http = axios.create({ timeout: 30000 });
+    this.rpcURLs = rpcURLs.length
+      ? rpcURLs
+      : ["https://api.mainnet-beta.solana.com"];
   }
 
   private nextURL(): string {
@@ -73,17 +60,16 @@ export class SolanaClient {
           method,
           params,
         });
-
         if (data.error?.code === 429) {
           lastErr = new Error(`429 on ${url}`);
           await this.sleep(1000 * (attempt + 1));
           continue;
         }
-
         if (data.error) {
-          throw new Error(`RPC error ${data.error.code}: ${data.error.message}`);
+          throw new Error(
+            `RPC error ${data.error.code}: ${data.error.message}`
+          );
         }
-
         return data.result;
       } catch (err: any) {
         if (err.response?.status === 429 || err.message?.includes("429")) {
@@ -102,24 +88,25 @@ export class SolanaClient {
     return new Promise((r) => setTimeout(r, ms));
   }
 
-  private async getAllSignatures(address: string): Promise<SignatureEntry[]> {
+  private async getAllSignatures(
+    address: string
+  ): Promise<SignatureEntry[]> {
     const allSigs: SignatureEntry[] = [];
     let before: string | undefined;
 
     while (true) {
       const opts: any = { limit: 1000 };
       if (before) opts.before = before;
-
-      const batch = await this.call("getSignaturesForAddress", [address, opts]);
+      const batch = await this.call("getSignaturesForAddress", [
+        address,
+        opts,
+      ]);
       if (!batch || batch.length === 0) break;
-
       allSigs.push(...batch);
       before = batch[batch.length - 1].signature;
-
       if (batch.length < 1000) break;
       await this.sleep(500);
     }
-
     return allSigs;
   }
 
@@ -129,21 +116,28 @@ export class SolanaClient {
   }
 
   private async getTransaction(sig: string): Promise<TxResponse | null> {
-    const result = await this.call("getTransaction", [sig, { encoding: "json", maxSupportedTransactionVersion: 0 }]);
-    return result;
+    return this.call("getTransaction", [
+      sig,
+      { encoding: "json", maxSupportedTransactionVersion: 0 },
+    ]);
   }
 
   private async getTokenAccounts(address: string): Promise<any> {
     return this.call("getTokenAccountsByOwner", [
       address,
-      { programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
+      {
+        programId:
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      },
       { encoding: "jsonParsed" },
     ]);
   }
 
-  async getWalletStats(address: string, tokenCA?: string): Promise<WalletStats> {
+  async getWalletStats(
+    address: string,
+    tokenCA?: string
+  ): Promise<WalletStats> {
     const balance = await this.getBalance(address);
-
     const allSigs = await this.getAllSignatures(address);
 
     const BATCH_SIZE = 5;
@@ -156,12 +150,16 @@ export class SolanaClient {
     let firstTxTime: Date | null = null;
     let lastTxTime: Date | null = null;
 
-    const validSigs = allSigs.filter((s) => !s.err).slice(0, MAX_TX);
+    const validSigs = allSigs
+      .filter((s) => !s.err)
+      .slice(0, MAX_TX);
 
     for (let i = 0; i < validSigs.length; i += BATCH_SIZE) {
       const batch = validSigs.slice(i, i + BATCH_SIZE);
       const txs = await Promise.all(
-        batch.map((s) => this.getTransaction(s.signature).catch(() => null))
+        batch.map((s) =>
+          this.getTransaction(s.signature).catch(() => null)
+        )
       );
 
       for (let j = 0; j < txs.length; j++) {
@@ -170,15 +168,20 @@ export class SolanaClient {
         if (!tx?.meta || tx.meta.err) continue;
         if (!tx.transaction?.message?.accountKeys) continue;
 
-        const accountIdx = tx.transaction.message.accountKeys.indexOf(address);
-        if (accountIdx === -1 || accountIdx >= tx.meta.preBalances.length) continue;
+        const accountIdx =
+          tx.transaction.message.accountKeys.indexOf(address);
+        if (
+          accountIdx === -1 ||
+          accountIdx >= tx.meta.preBalances.length
+        )
+          continue;
 
         txCount++;
 
         if (sig.blockTime) {
-          const ts = new Date(sig.blockTime * 1000);
-          if (!firstTxTime || ts < firstTxTime) firstTxTime = ts;
-          if (!lastTxTime || ts > lastTxTime) lastTxTime = ts;
+          const t = new Date(sig.blockTime * 1000);
+          if (!firstTxTime || t < firstTxTime) firstTxTime = t;
+          if (!lastTxTime || t > lastTxTime) lastTxTime = t;
         }
 
         const pre = tx.meta.preBalances[accountIdx];
@@ -198,46 +201,34 @@ export class SolanaClient {
 
     let tokenInfo: TokenInfo | null = null;
 
-    if (tokenCA) {
-      try {
-        const tokenAccounts = await this.getTokenAccounts(address);
-        if (tokenAccounts?.value) {
-          for (const ta of tokenAccounts.value) {
-            const info = ta.account.data.parsed.info;
-            if (info.mint === tokenCA) {
+    try {
+      const tokenAccounts = await this.getTokenAccounts(address);
+      if (tokenAccounts?.value) {
+        for (const ta of tokenAccounts.value) {
+          const info = ta.account.data.parsed.info;
+          if (tokenCA && info.mint !== tokenCA) continue;
+          if (
+            info.tokenAmount.uiAmount &&
+            info.tokenAmount.uiAmount > 0
+          ) {
+            if (
+              !tokenInfo ||
+              parseFloat(info.tokenAmount.uiAmountString) >
+                parseFloat(tokenInfo.balance)
+            ) {
               tokenInfo = {
                 symbol: info.mint.slice(0, 6),
                 name: info.mint,
-                balance: info.tokenAmount.uiAmountString || "0",
+                balance: info.tokenAmount.uiAmountString,
                 mint: info.mint,
                 decimals: info.tokenAmount.decimals,
               };
-              break;
             }
+            if (tokenCA) break;
           }
         }
-      } catch {}
-    } else {
-      try {
-        const tokenAccounts = await this.getTokenAccounts(address);
-        if (tokenAccounts?.value) {
-          for (const ta of tokenAccounts.value) {
-            const info = ta.account.data.parsed.info;
-            if (info.tokenAmount.uiAmount && info.tokenAmount.uiAmount > 0) {
-              if (!tokenInfo || parseFloat(info.tokenAmount.uiAmountString) > parseFloat(tokenInfo.balance)) {
-                tokenInfo = {
-                  symbol: info.mint.slice(0, 6),
-                  name: info.mint,
-                  balance: info.tokenAmount.uiAmountString,
-                  mint: info.mint,
-                  decimals: info.tokenAmount.decimals,
-                };
-              }
-            }
-          }
-        }
-      } catch {}
-    }
+      }
+    } catch {}
 
     return {
       address,
@@ -261,10 +252,12 @@ export class SolanaClient {
       mint,
       supply: supply.value,
       decimals: supply.decimals,
-      largest_holders: largest.value?.slice(0, 10).map((h: any) => ({
-        address: h.address,
-        amount: h.uiAmountString,
-      })),
+      largest_holders: largest.value
+        ?.slice(0, 10)
+        .map((h: any) => ({
+          address: h.address,
+          amount: h.uiAmountString,
+        })),
     };
   }
 }

@@ -1,5 +1,5 @@
-import axios, { AxiosInstance } from "axios";
-import { WalletStats, TokenInfo } from "../types";
+import axios from "axios";
+import type { WalletStats, TokenInfo } from "./types";
 
 interface BlockscoutTx {
   value: string;
@@ -14,34 +14,31 @@ interface BlockscoutTxList {
   next_page_params: Record<string, any> | null;
 }
 
-interface BlockscoutAddr {
-  coin_balance: string;
-}
-
-interface BlockscoutToken {
-  token: {
-    symbol: string;
-    name: string;
-    decimals: string;
-    address: string;
-  };
-  value: string;
-  token_id: string;
-}
-
 const WEI = 1e18;
 
-const CHAIN_CONFIG: Record<string, { apiBase: string; currency: string }> = {
-  ethereum: { apiBase: "https://eth.blockscout.com/api/v2", currency: "ETH" },
-  bsc: { apiBase: "https://bsc.blockscout.com/api/v2", currency: "BNB" },
-  polygon: { apiBase: "https://polygon.blockscout.com/api/v2", currency: "MATIC" },
+const CHAIN_CONFIG: Record<
+  string,
+  { apiBase: string; currency: string }
+> = {
+  ethereum: {
+    apiBase: "https://eth.blockscout.com/api/v2",
+    currency: "ETH",
+  },
+  bsc: {
+    apiBase: "https://bsc.blockscout.com/api/v2",
+    currency: "BNB",
+  },
+  polygon: {
+    apiBase: "https://polygon.blockscout.com/api/v2",
+    currency: "MATIC",
+  },
 };
 
 export class EvmClient {
   private apiBase: string;
   private currency: string;
   private chain: string;
-  private http: AxiosInstance;
+  private http = axios.create({ timeout: 30000 });
 
   constructor(chain: string) {
     const config = CHAIN_CONFIG[chain];
@@ -49,7 +46,6 @@ export class EvmClient {
     this.apiBase = config.apiBase;
     this.currency = config.currency;
     this.chain = chain;
-    this.http = axios.create({ timeout: 30000 });
   }
 
   private async getJSON<T>(url: string): Promise<T> {
@@ -72,13 +68,14 @@ export class EvmClient {
     return new Promise((r) => setTimeout(r, ms));
   }
 
-  private async getBalance(address: string): Promise<number> {
-    const addr = await this.getJSON<BlockscoutAddr>(`${this.apiBase}/addresses/${address}`);
-    return parseInt(addr.coin_balance || "0") / WEI;
-  }
-
-  async getWalletStats(address: string, tokenCA?: string): Promise<WalletStats> {
-    const balance = await this.getBalance(address);
+  async getWalletStats(
+    address: string,
+    tokenCA?: string
+  ): Promise<WalletStats> {
+    const addrData = await this.getJSON<{ coin_balance: string }>(
+      `${this.apiBase}/addresses/${address}`
+    );
+    const balance = parseInt(addrData.coin_balance || "0") / WEI;
     const addrLower = address.toLowerCase();
 
     let totalSent = 0;
@@ -92,7 +89,8 @@ export class EvmClient {
       const maxPages = 10;
 
       for (let page = 0; page < maxPages; page++) {
-        const txList = await this.getJSON<BlockscoutTxList>(pageURL);
+        const txList =
+          await this.getJSON<BlockscoutTxList>(pageURL);
         if (!txList.items?.length) break;
 
         for (const tx of txList.items) {
@@ -104,15 +102,18 @@ export class EvmClient {
           if (!lastTxTime || t > lastTxTime) lastTxTime = t;
 
           const value = parseFloat(tx.value) || 0;
-
-          if (tx.from.hash.toLowerCase() === addrLower) totalSent += value;
-          if (tx.to?.hash?.toLowerCase() === addrLower) totalReceived += value;
+          if (tx.from.hash.toLowerCase() === addrLower)
+            totalSent += value;
+          if (tx.to?.hash?.toLowerCase() === addrLower)
+            totalReceived += value;
         }
 
         if (!txList.next_page_params) break;
 
         const params = new URLSearchParams();
-        for (const [k, v] of Object.entries(txList.next_page_params)) {
+        for (const [k, v] of Object.entries(
+          txList.next_page_params
+        )) {
           params.set(k, String(v));
         }
         pageURL = `${this.apiBase}/addresses/${address}/transactions?${params.toString()}`;
@@ -135,15 +136,21 @@ export class EvmClient {
           for (const tr of transfers.items) {
             const fromAddr = tr.from?.hash?.toLowerCase();
             const toAddr = tr.to?.hash?.toLowerCase();
-            const rawValue = parseFloat(tr.total?.value || tr.value || "0");
-            const decimals = parseInt(tr.token?.decimals || "18");
+            const rawValue = parseFloat(
+              tr.total?.value || tr.value || "0"
+            );
+            const decimals = parseInt(
+              tr.token?.decimals || "18"
+            );
 
-            tokenSymbol = tr.token?.symbol || tokenCA.slice(0, 6);
+            tokenSymbol =
+              tr.token?.symbol || tokenCA.slice(0, 6);
             tokenName = tr.token?.name || tokenCA;
             tokenDecimals = decimals;
 
             if (toAddr === addrLower) tokenBalance += rawValue;
-            if (fromAddr === addrLower) tokenBalance -= rawValue;
+            if (fromAddr === addrLower)
+              tokenBalance -= rawValue;
 
             const t = new Date(tr.timestamp);
             if (!firstTxTime || t < firstTxTime) firstTxTime = t;
