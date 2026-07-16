@@ -2,9 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 
-const TOKEN_CA = "PASTE_YOUR_CA_HERE";
-const TOKEN_NAME = "MyToken";
-const TOKEN_SYMBOL = "MTK";
+const TOKEN_CA = "8Zf4KxKYZ6qUFxgEmepjvM6yuhegkzPFQySqTc7Ppump";
+const TOKEN_NAME = "8Zf4Kx";
+const TOKEN_SYMBOL = "8Zf4";
 const TOKEN_CHAIN = "solana";
 
 type View = "analyzer" | "ca" | "help";
