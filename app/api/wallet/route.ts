@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { SolanaClient } from "@/lib/solana";
 import { EvmClient } from "@/lib/evm";
 
+export const maxDuration = 60;
+
 const solanaRPCs = (
   process.env.SOLANA_RPC_URLS ||
   "https://api.mainnet-beta.solana.com"

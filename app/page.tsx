@@ -102,11 +102,26 @@ export default function Home() {
     addLog('fetching data... <span class="spinner"></span>');
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 65000);
+
       const res = await fetch("/api/wallet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address: addr, chain }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        setLogs((prev) => prev.slice(0, -1));
+        addLog(`ERROR: ${data.message || data.error || "server error"}`, "err");
+        setLoading(false);
+        return;
+      }
+
       const data = await res.json();
 
       if (data.error) {
@@ -119,7 +134,11 @@ export default function Home() {
       }
     } catch (err: any) {
       setLogs((prev) => prev.slice(0, -1));
-      addLog(`ERROR: ${err.message}`, "err");
+      if (err.name === "AbortError") {
+        addLog("ERROR: request timed out — wallet has too many transactions, try again", "err");
+      } else {
+        addLog(`ERROR: ${err.message}`, "err");
+      }
     }
 
     setLoading(false);
