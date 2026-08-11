@@ -29,6 +29,7 @@ interface TxResponse {
     message: { accountKeys: string[] };
   };
   blockTime: number | null;
+  error?: { code: number; message: string };
 }
 
 const SOL_PER_LAMPORT = 1e9;
