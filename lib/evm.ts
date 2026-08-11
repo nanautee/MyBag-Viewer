@@ -38,7 +38,7 @@ export class EvmClient {
   private apiBase: string;
   private currency: string;
   private chain: string;
-  private http = axios.create({ timeout: 30000 });
+  private http = axios.create({ timeout: 8000 });
 
   constructor(chain: string) {
     const config = CHAIN_CONFIG[chain];

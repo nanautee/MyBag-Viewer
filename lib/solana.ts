@@ -33,7 +33,7 @@ const SOL_PER_LAMPORT = 1e9;
 export class SolanaClient {
   private rpcURLs: string[];
   private currentIndex = 0;
-  private http = axios.create({ timeout: 30000 });
+  private http = axios.create({ timeout: 5000 });
 
   constructor(rpcURLs: string[]) {
     this.rpcURLs = rpcURLs.length
@@ -62,7 +62,7 @@ export class SolanaClient {
         });
         if (data.error?.code === 429) {
           lastErr = new Error(`429 on ${url}`);
-          await this.sleep(1000 * (attempt + 1));
+          await this.sleep(300 * (attempt + 1));
           continue;
         }
         if (data.error) {
@@ -74,14 +74,27 @@ export class SolanaClient {
       } catch (err: any) {
         if (err.response?.status === 429 || err.message?.includes("429")) {
           lastErr = err;
-          await this.sleep(1000 * (attempt + 1));
+          await this.sleep(300 * (attempt + 1));
           continue;
         }
         lastErr = err;
-        await this.sleep(500);
+        await this.sleep(100);
       }
     }
     throw lastErr || new Error("All RPC endpoints failed");
+  }
+
+  private async callBatch(methods: { method: string; params: any[] }[]): Promise<any[]> {
+    const url = this.nextURL();
+    const body = methods.map((m, i) => ({
+      jsonrpc: "2.0",
+      id: i + 1,
+      method: m.method,
+      params: m.params,
+    }));
+
+    const { data } = await this.http.post<any[]>(url, body);
+    return data || [];
   }
 
   private sleep(ms: number) {
@@ -94,7 +107,7 @@ export class SolanaClient {
     const allSigs: SignatureEntry[] = [];
     let before: string | undefined;
 
-    while (true) {
+    for (let page = 0; page < 2; page++) {
       const opts: any = { limit: 1000 };
       if (before) opts.before = before;
       const batch = await this.call("getSignaturesForAddress", [
@@ -105,7 +118,7 @@ export class SolanaClient {
       allSigs.push(...batch);
       before = batch[batch.length - 1].signature;
       if (batch.length < 1000) break;
-      await this.sleep(500);
+      await this.sleep(200);
     }
     return allSigs;
   }
@@ -115,11 +128,37 @@ export class SolanaClient {
     return result.value / SOL_PER_LAMPORT;
   }
 
-  private async getTransaction(sig: string): Promise<TxResponse | null> {
-    return this.call("getTransaction", [
-      sig,
-      { encoding: "json", maxSupportedTransactionVersion: 0 },
-    ]);
+  private async getTransactions(
+    sigs: string[],
+    batchSize = 10
+  ): Promise<(TxResponse | null)[]> {
+    const results: (TxResponse | null)[] = [];
+
+    for (let i = 0; i < sigs.length; i += batchSize) {
+      const chunk = sigs.slice(i, i + batchSize);
+
+      try {
+        const batch = await this.callBatch(
+          chunk.map((s) => ({
+            method: "getTransaction",
+            params: [s, { encoding: "json", maxSupportedTransactionVersion: 0 }],
+          }))
+        );
+
+        const map = new Map<number, any>();
+        for (const r of batch) {
+          if (r && r.result && !r.error) map.set(r.id, r.result);
+        }
+
+        for (let j = 0; j < chunk.length; j++) {
+          results.push(map.get(j + 1) || null);
+        }
+      } catch {
+        for (const _ of chunk) results.push(null);
+      }
+    }
+
+    return results;
   }
 
   private async getTokenAccounts(address: string): Promise<any> {
@@ -140,9 +179,7 @@ export class SolanaClient {
     const balance = await this.getBalance(address);
     const allSigs = await this.getAllSignatures(address);
 
-    const BATCH_SIZE = 5;
-    const DELAY_MS = 1200;
-    const MAX_TX = 200;
+    const MAX_TX = 50;
 
     let totalSent = 0;
     let totalReceived = 0;
@@ -154,48 +191,39 @@ export class SolanaClient {
       .filter((s) => !s.err)
       .slice(0, MAX_TX);
 
-    for (let i = 0; i < validSigs.length; i += BATCH_SIZE) {
-      const batch = validSigs.slice(i, i + BATCH_SIZE);
-      const txs = await Promise.all(
-        batch.map((s) =>
-          this.getTransaction(s.signature).catch(() => null)
-        )
-      );
+    const txs = await this.getTransactions(
+      validSigs.map((s) => s.signature)
+    );
 
-      for (let j = 0; j < txs.length; j++) {
-        const tx = txs[j];
-        const sig = batch[j];
-        if (!tx?.meta || tx.meta.err) continue;
-        if (!tx.transaction?.message?.accountKeys) continue;
+    for (let j = 0; j < txs.length; j++) {
+      const tx = txs[j];
+      const sig = validSigs[j];
+      if (!tx?.meta || tx.meta.err) continue;
+      if (!tx.transaction?.message?.accountKeys) continue;
 
-        const accountIdx =
-          tx.transaction.message.accountKeys.indexOf(address);
-        if (
-          accountIdx === -1 ||
-          accountIdx >= tx.meta.preBalances.length
-        )
-          continue;
+      const accountIdx =
+        tx.transaction.message.accountKeys.indexOf(address);
+      if (
+        accountIdx === -1 ||
+        accountIdx >= tx.meta.preBalances.length
+      )
+        continue;
 
-        txCount++;
+      txCount++;
 
-        if (sig.blockTime) {
-          const t = new Date(sig.blockTime * 1000);
-          if (!firstTxTime || t < firstTxTime) firstTxTime = t;
-          if (!lastTxTime || t > lastTxTime) lastTxTime = t;
-        }
-
-        const pre = tx.meta.preBalances[accountIdx];
-        const post = tx.meta.postBalances[accountIdx];
-
-        if (pre > post) {
-          totalSent += (pre - post) / SOL_PER_LAMPORT;
-        } else if (post > pre) {
-          totalReceived += (post - pre) / SOL_PER_LAMPORT;
-        }
+      if (sig.blockTime) {
+        const t = new Date(sig.blockTime * 1000);
+        if (!firstTxTime || t < firstTxTime) firstTxTime = t;
+        if (!lastTxTime || t > lastTxTime) lastTxTime = t;
       }
 
-      if (i + BATCH_SIZE < validSigs.length) {
-        await this.sleep(DELAY_MS);
+      const pre = tx.meta.preBalances[accountIdx];
+      const post = tx.meta.postBalances[accountIdx];
+
+      if (pre > post) {
+        totalSent += (pre - post) / SOL_PER_LAMPORT;
+      } else if (post > pre) {
+        totalReceived += (post - pre) / SOL_PER_LAMPORT;
       }
     }
 

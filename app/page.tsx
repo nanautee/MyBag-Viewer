@@ -103,7 +103,7 @@ export default function Home() {
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 65000);
+      const timeout = setTimeout(() => controller.abort(), 30000);
 
       const res = await fetch("/api/wallet", {
         method: "POST",
