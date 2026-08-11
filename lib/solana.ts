@@ -139,7 +139,12 @@ export class SolanaClient {
       const responses = await Promise.all(
         chunk.map(async (sig) => {
           try {
-            const { data } = await this.http.post<TxResponse>(url, {
+            const { data } = await this.http.post<{
+              jsonrpc: string;
+              id: number;
+              result?: TxResponse;
+              error?: { code: number; message: string };
+            }>(url, {
               jsonrpc: "2.0",
               id: 1,
               method: "getTransaction",
