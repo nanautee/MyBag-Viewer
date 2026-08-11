@@ -6,6 +6,12 @@ export interface WalletStats {
   total_received: string;
   gross_turnover: string;
   tx_count: number;
+  processed_tx_count?: number;
+  token_volume?: {
+    buy: string;
+    sell: string;
+    total: string;
+  };
   first_tx_time: string | null;
   last_tx_time: string | null;
   native_currency: string;

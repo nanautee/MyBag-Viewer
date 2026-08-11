@@ -21,6 +21,9 @@ interface TxResponse {
     postBalances: number[];
     fee: number;
     err: any;
+    loadedAddresses?: { writable: string[]; readonly: string[] };
+    preTokenBalances?: any[];
+    postTokenBalances?: any[];
   };
   transaction: {
     message: { accountKeys: string[] };
@@ -32,19 +35,15 @@ const SOL_PER_LAMPORT = 1e9;
 
 export class SolanaClient {
   private rpcURLs: string[];
-  private currentIndex = 0;
-  private http = axios.create({ timeout: 5000 });
+  private http = axios.create({ timeout: 8000 });
 
   constructor(rpcURLs: string[]) {
     this.rpcURLs = rpcURLs.length
       ? rpcURLs
-      : ["https://api.mainnet-beta.solana.com"];
-  }
-
-  private nextURL(): string {
-    const url = this.rpcURLs[this.currentIndex % this.rpcURLs.length];
-    this.currentIndex++;
-    return url;
+      : [
+          "https://solana-rpc.publicnode.com",
+          "https://api.mainnet-beta.solana.com",
+        ];
   }
 
   private async call(method: string, params: any[]): Promise<any> {
@@ -52,7 +51,7 @@ export class SolanaClient {
     let lastErr: Error | null = null;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const url = this.nextURL();
+      const url = this.rpcURLs[attempt % this.rpcURLs.length];
       try {
         const { data } = await this.http.post<RpcResponse>(url, {
           jsonrpc: "2.0",
@@ -60,9 +59,9 @@ export class SolanaClient {
           method,
           params,
         });
-        if (data.error?.code === 429) {
+        if (data.error?.code === 429 || data.error?.message?.includes("Too many")) {
           lastErr = new Error(`429 on ${url}`);
-          await this.sleep(300 * (attempt + 1));
+          await this.sleep(400 * (attempt + 1));
           continue;
         }
         if (data.error) {
@@ -74,7 +73,7 @@ export class SolanaClient {
       } catch (err: any) {
         if (err.response?.status === 429 || err.message?.includes("429")) {
           lastErr = err;
-          await this.sleep(300 * (attempt + 1));
+          await this.sleep(400 * (attempt + 1));
           continue;
         }
         lastErr = err;
@@ -84,41 +83,40 @@ export class SolanaClient {
     throw lastErr || new Error("All RPC endpoints failed");
   }
 
-  private async callBatch(methods: { method: string; params: any[] }[]): Promise<any[]> {
-    const url = this.nextURL();
-    const body = methods.map((m, i) => ({
-      jsonrpc: "2.0",
-      id: i + 1,
-      method: m.method,
-      params: m.params,
-    }));
-
-    const { data } = await this.http.post<any[]>(url, body);
-    return data || [];
-  }
-
   private sleep(ms: number) {
     return new Promise((r) => setTimeout(r, ms));
   }
 
   private async getAllSignatures(
-    address: string
+    address: string,
+    preferredRPC?: string
   ): Promise<SignatureEntry[]> {
     const allSigs: SignatureEntry[] = [];
     let before: string | undefined;
 
-    for (let page = 0; page < 2; page++) {
+    for (let page = 0; page < 10; page++) {
       const opts: any = { limit: 1000 };
       if (before) opts.before = before;
-      const batch = await this.call("getSignaturesForAddress", [
-        address,
-        opts,
-      ]);
+      let batch: any;
+      if (preferredRPC) {
+        try {
+          const { data } = await this.http.post<RpcResponse>(preferredRPC, {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "getSignaturesForAddress",
+            params: [address, opts],
+          });
+          batch = data.result;
+        } catch {
+          batch = await this.call("getSignaturesForAddress", [address, opts]);
+        }
+      } else {
+        batch = await this.call("getSignaturesForAddress", [address, opts]);
+      }
       if (!batch || batch.length === 0) break;
       allSigs.push(...batch);
       before = batch[batch.length - 1].signature;
       if (batch.length < 1000) break;
-      await this.sleep(200);
     }
     return allSigs;
   }
@@ -128,33 +126,36 @@ export class SolanaClient {
     return result.value / SOL_PER_LAMPORT;
   }
 
-  private async getTransactions(
-    sigs: string[],
-    batchSize = 10
+  private async getTransactionParallel(
+    sigs: string[]
   ): Promise<(TxResponse | null)[]> {
-    const results: (TxResponse | null)[] = [];
+    const results: (TxResponse | null)[] = new Array(sigs.length).fill(null);
+    const CONC = 20;
+    const url = this.rpcURLs[0];
 
-    for (let i = 0; i < sigs.length; i += batchSize) {
-      const chunk = sigs.slice(i, i + batchSize);
-
-      try {
-        const batch = await this.callBatch(
-          chunk.map((s) => ({
-            method: "getTransaction",
-            params: [s, { encoding: "json", maxSupportedTransactionVersion: 0 }],
-          }))
-        );
-
-        const map = new Map<number, any>();
-        for (const r of batch) {
-          if (r && r.result && !r.error) map.set(r.id, r.result);
-        }
-
-        for (let j = 0; j < chunk.length; j++) {
-          results.push(map.get(j + 1) || null);
-        }
-      } catch {
-        for (const _ of chunk) results.push(null);
+    for (let i = 0; i < sigs.length; i += CONC) {
+      const chunk = sigs.slice(i, i + CONC);
+      const responses = await Promise.all(
+        chunk.map(async (sig) => {
+          try {
+            const { data } = await this.http.post<TxResponse>(url, {
+              jsonrpc: "2.0",
+              id: 1,
+              method: "getTransaction",
+              params: [
+                sig,
+                { encoding: "json", maxSupportedTransactionVersion: 0 },
+              ],
+            });
+            if (data.error) return null;
+            return data.result || null;
+          } catch {
+            return null;
+          }
+        })
+      );
+      for (let k = 0; k < responses.length; k++) {
+        results[i + k] = responses[k];
       }
     }
 
@@ -165,8 +166,7 @@ export class SolanaClient {
     return this.call("getTokenAccountsByOwner", [
       address,
       {
-        programId:
-          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
       },
       { encoding: "jsonParsed" },
     ]);
@@ -176,54 +176,66 @@ export class SolanaClient {
     address: string,
     tokenCA?: string
   ): Promise<WalletStats> {
-    const balance = await this.getBalance(address);
-    const allSigs = await this.getAllSignatures(address);
+    const [balance, allSigs] = await Promise.all([
+      this.getBalance(address),
+      this.getAllSignatures(
+        address,
+        "https://api.mainnet-beta.solana.com"
+      ),
+    ]);
 
-    const MAX_TX = 50;
+    const validSigs = allSigs.filter((s) => !s.err);
 
     let totalSent = 0;
     let totalReceived = 0;
-    let txCount = 0;
+    let tokenBuy = 0;
+    let tokenSell = 0;
+    let tradeCount = 0;
     let firstTxTime: Date | null = null;
     let lastTxTime: Date | null = null;
 
-    const validSigs = allSigs
-      .filter((s) => !s.err)
-      .slice(0, MAX_TX);
+    const sigs = validSigs.map((s) => s.signature);
+    const MAX_LOAD = 200;
+    const txs = await this.getTransactionParallel(sigs.slice(0, MAX_LOAD));
 
-    const txs = await this.getTransactions(
-      validSigs.map((s) => s.signature)
-    );
+    for (const sig of validSigs) {
+      if (!sig.blockTime) continue;
+      const t = new Date(sig.blockTime * 1000);
+      if (!firstTxTime || t < firstTxTime) firstTxTime = t;
+      if (!lastTxTime || t > lastTxTime) lastTxTime = t;
+    }
 
     for (let j = 0; j < txs.length; j++) {
       const tx = txs[j];
-      const sig = validSigs[j];
       if (!tx?.meta || tx.meta.err) continue;
-      if (!tx.transaction?.message?.accountKeys) continue;
 
-      const accountIdx =
-        tx.transaction.message.accountKeys.indexOf(address);
-      if (
-        accountIdx === -1 ||
-        accountIdx >= tx.meta.preBalances.length
-      )
-        continue;
+      tradeCount++;
 
-      txCount++;
-
-      if (sig.blockTime) {
-        const t = new Date(sig.blockTime * 1000);
-        if (!firstTxTime || t < firstTxTime) firstTxTime = t;
-        if (!lastTxTime || t > lastTxTime) lastTxTime = t;
+      const accountIdx = tx.transaction?.message?.accountKeys?.indexOf(address);
+      if (accountIdx !== -1 && accountIdx < tx.meta.preBalances.length) {
+        const pre = tx.meta.preBalances[accountIdx];
+        const post = tx.meta.postBalances[accountIdx];
+        if (pre > post) {
+          totalSent += (pre - post) / SOL_PER_LAMPORT;
+        } else if (post > pre) {
+          totalReceived += (post - pre) / SOL_PER_LAMPORT;
+        }
       }
 
-      const pre = tx.meta.preBalances[accountIdx];
-      const post = tx.meta.postBalances[accountIdx];
+      const preTok = tx.meta.preTokenBalances || [];
+      const postTok = tx.meta.postTokenBalances || [];
 
-      if (pre > post) {
-        totalSent += (pre - post) / SOL_PER_LAMPORT;
-      } else if (post > pre) {
-        totalReceived += (post - pre) / SOL_PER_LAMPORT;
+      for (const t of postTok) {
+        if (!t || t.owner !== address) continue;
+        const preT = preTok.find(
+          (p: any) => p && p.mint === t.mint && p.owner === address
+        );
+        const postAmt = parseFloat(t.uiTokenAmount?.uiAmountString || "0");
+        const preAmt = preT
+          ? parseFloat(preT.uiTokenAmount?.uiAmountString || "0")
+          : 0;
+        if (postAmt > preAmt) tokenBuy += postAmt - preAmt;
+        else tokenSell += preAmt - postAmt;
       }
     }
 
@@ -235,10 +247,7 @@ export class SolanaClient {
         for (const ta of tokenAccounts.value) {
           const info = ta.account.data.parsed.info;
           if (tokenCA && info.mint !== tokenCA) continue;
-          if (
-            info.tokenAmount.uiAmount &&
-            info.tokenAmount.uiAmount > 0
-          ) {
+          if (info.tokenAmount.uiAmount && info.tokenAmount.uiAmount > 0) {
             if (
               !tokenInfo ||
               parseFloat(info.tokenAmount.uiAmountString) >
@@ -265,7 +274,13 @@ export class SolanaClient {
       total_sent: totalSent.toFixed(9),
       total_received: totalReceived.toFixed(9),
       gross_turnover: (totalSent + totalReceived).toFixed(9),
-      tx_count: txCount,
+      tx_count: validSigs.length,
+      processed_tx_count: tradeCount,
+      token_volume: {
+        buy: tokenBuy.toFixed(4),
+        sell: tokenSell.toFixed(4),
+        total: (tokenBuy + tokenSell).toFixed(4),
+      },
       first_tx_time: firstTxTime?.toISOString() || null,
       last_tx_time: lastTxTime?.toISOString() || null,
       native_currency: "SOL",

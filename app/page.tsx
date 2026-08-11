@@ -17,6 +17,12 @@ interface WalletResult {
   total_received: string;
   gross_turnover: string;
   tx_count: number;
+  processed_tx_count?: number;
+  token_volume?: {
+    buy: string;
+    sell: string;
+    total: string;
+  };
   first_tx_time: string | null;
   last_tx_time: string | null;
   native_currency: string;
@@ -312,6 +318,34 @@ export default function Home() {
                           {result.native_currency}
                         </div>
                       </div>
+                      {result.token_volume && (
+                        <div className="stat-item">
+                          <div className="stat-label">Token Volume</div>
+                          <div className="stat-value big cyan">
+                            {Number(result.token_volume.total).toLocaleString(
+                              undefined,
+                              { maximumFractionDigits: 0 }
+                            )}
+                          </div>
+                          <div
+                            style={{
+                              color: "var(--dim)",
+                              fontSize: 11,
+                              marginTop: 2,
+                            }}
+                          >
+                            buy {Number(result.token_volume.buy).toLocaleString(
+                              undefined,
+                              { maximumFractionDigits: 0 }
+                            )}{" "}
+                            / sell{" "}
+                            {Number(result.token_volume.sell).toLocaleString(
+                              undefined,
+                              { maximumFractionDigits: 0 }
+                            )}
+                          </div>
+                        </div>
+                      )}
                       <div className="stat-item">
                         <div className="stat-label">Total Sent</div>
                         <div className="stat-value red">
@@ -334,6 +368,18 @@ export default function Home() {
                       <div className="stat-item">
                         <div className="stat-label">Transactions</div>
                         <div className="stat-value">{result.tx_count}</div>
+                        {result.processed_tx_count &&
+                          result.processed_tx_count !== result.tx_count && (
+                            <div
+                              style={{
+                                color: "var(--dim)",
+                                fontSize: 11,
+                                marginTop: 2,
+                              }}
+                            >
+                              loaded {result.processed_tx_count} txs
+                            </div>
+                          )}
                       </div>
                       <div className="stat-item">
                         <div className="stat-label">First Tx</div>
